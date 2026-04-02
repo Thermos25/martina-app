@@ -1,26 +1,30 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import os
 from datetime import datetime
 
-# Konfiguration der Seite
+# Seite konfigurieren
 st.set_page_config(page_title="Martina Weickmann Inventar", layout="centered")
 
 st.title("🎨 Martina Weickmann - Kunst-Inventar")
-st.write("Hier kannst du neue Werke scannen und für das Management erfassen.")
+st.write("Hier werden alle Werke sicher in die Cloud gespeichert.")
 
-# Datei für die Datenbank (CSV)
-DB_FILE = "inventar.csv"
+# Verbindung zu Google Sheets aufbauen
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except Exception as e:
+    st.error("Verbindung zu Google fehlgeschlagen. Bitte prüfe die Secrets im Dashboard!")
 
-# Formular für die Erfassung
+# Formular für die Eingabe
 with st.form("art_entry_form", clear_on_submit=True):
     st.subheader("Neues Werk aufnehmen")
     
     # Kamera-Input
     uploaded_file = st.camera_input("Bild aufnehmen")
     
-    # Details
+    # Text-Eingaben
     title = st.text_input("Titel des Kunstwerks")
+    
     col1, col2 = st.columns(2)
     with col1:
         width = st.number_input("Breite (cm)", min_value=0.0, step=0.1)
@@ -30,45 +34,49 @@ with st.form("art_entry_form", clear_on_submit=True):
     medium = st.selectbox("Technik", ["Öl auf Leinwand", "Acryl", "Aquarell", "Mischtechnik", "Skizze"])
     price = st.number_input("Preisvorstellung (€)", min_value=0)
     
-    submitted = st.form_submit_button("In Inventar speichern")
+    # Speicher-Button
+    submitted = st.form_submit_button("Sicher in Google Cloud speichern")
 
     if submitted:
-        if title and uploaded_file:
-            # Zeitstempel für den Dateinamen des Bildes
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_filename = f"bild_{timestamp}.png"
-            
-            # Bild lokal speichern (optional, für den Anfang)
-            with open(img_filename, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            
-            # Daten in Liste speichern
-            new_data = {
-                "Datum": [datetime.now().strftime("%d.%m.%Y")],
-                "Titel": [title],
-                "Breite": [width],
-                "Höhe": [height],
-                "Technik": [medium],
-                "Preis": [price],
-                "Bild-Datei": [img_filename]
-            }
-            df = pd.DataFrame(new_data)
-            
-            # In CSV schreiben
-            if not os.path.isfile(DB_FILE):
-                df.to_csv(DB_FILE, index=False)
-            else:
-                df.to_csv(DB_FILE, mode='a', header=False, index=False)
+        if title: # Wir prüfen erst mal nur den Titel
+            try:
+                # Neue Datenzeile erstellen
+                new_row = pd.DataFrame([{
+                    "Datum": datetime.now().strftime("%d.%m.%Y"),
+                    "Titel": title,
+                    "Breite": width,
+                    "Höhe": height,
+                    "Technik": medium,
+                    "Preis": price,
+                    "Bild_URL": "Foto erfasst" 
+                }])
                 
-            st.success(f"Erfolgreich gespeichert: {title}")
+                # Bestehende Daten von Google lesen
+                existing_data = conn.read(worksheet="Inventar")
+                
+                # Neue Zeile anhängen
+                updated_df = pd.concat([existing_data, new_row], ignore_index=True)
+                
+                # Das Ganze zurück zu Google schicken
+                conn.update(worksheet="Inventar", data=updated_df)
+                
+                # Erfolg feiern!
+                st.success(f"✅ Wunderbar! '{title}' ist jetzt in deiner Google Tabelle sicher gespeichert.")
+                st.balloons()
+            except Exception as e:
+                st.error(f"Fehler beim Speichern in Google Sheets: {e}")
         else:
-            st.error("Bitte einen Titel angeben und ein Foto machen!")
+            st.warning("Bitte gib mindestens einen Titel für das Bild ein.")
 
-# Bereich: Inventar anzeigen
+# Live-Vorschau der echten Google Tabelle
 st.divider()
-st.subheader("Aktuelles Inventar")
-if os.path.isfile(DB_FILE):
-    inventory_df = pd.read_csv(DB_FILE)
-    st.dataframe(inventory_df)
-else:
-    st.info("Noch keine Werke im Inventar erfasst.")
+st.subheader("Live-Vorschau deiner Google Tabelle")
+try:
+    # Wir laden die Daten direkt von Google Sheets
+    live_data = conn.read(worksheet="Inventar")
+    if not live_data.empty:
+        st.dataframe(live_data, use_container_width=True)
+    else:
+        st.info("Die Google Tabelle ist noch leer. Zeit für das erste Kunstwerk!")
+except Exception as e:
+    st.info("Suche Verbindung zu Google Sheets... Bitte stelle sicher, dass das Tabellenblatt 'Inventar' heißt.")
