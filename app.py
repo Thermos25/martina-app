@@ -4,10 +4,9 @@ import pandas as pd
 from datetime import datetime
 
 st.set_page_config(page_title="Martina Weickmann Inventar", layout="centered")
-
 st.title("🎨 Martina Weickmann - Kunst-Inventar")
 
-# Verbindung zu Google Sheets
+# Verbindung mit Cache-Deaktivierung
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 with st.form("art_entry_form", clear_on_submit=True):
@@ -29,10 +28,9 @@ with st.form("art_entry_form", clear_on_submit=True):
     if submitted:
         if title:
             try:
-                # 1. Bestehende Daten von Google holen
-                existing_data = conn.read(worksheet="Inventar")
+                # Daten frisch lesen (ohne Cache)
+                existing_data = conn.read(worksheet="Inventar", ttl=0)
                 
-                # 2. Neue Zeile erstellen
                 new_row = pd.DataFrame([{
                     "Datum": datetime.now().strftime("%d.%m.%Y"),
                     "Titel": title,
@@ -43,23 +41,25 @@ with st.form("art_entry_form", clear_on_submit=True):
                     "Bild_URL": "Foto erfasst"
                 }])
                 
-                # 3. Zusammenfügen
                 updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-                
-                # 4. ALLES zurückschreiben (das löst den 400er Fehler meistens)
                 conn.update(worksheet="Inventar", data=updated_df)
                 
                 st.success(f"✅ Wunderbar! '{title}' wurde gespeichert.")
                 st.balloons()
+                st.cache_data.clear() # Cache leeren
             except Exception as e:
-                st.error(f"Verbindung steht, aber Google meldet: {e}")
+                st.error(f"Google meldet: {e}")
         else:
             st.warning("Bitte gib einen Titel ein.")
 
 st.divider()
 st.subheader("Deine Google Tabelle (Live)")
+if st.button("Tabelle jetzt aktualisieren"):
+    st.cache_data.clear()
+
 try:
-    df = conn.read(worksheet="Inventar")
+    # Tabelle anzeigen (frisch von Google)
+    df = conn.read(worksheet="Inventar", ttl=0)
     st.dataframe(df, use_container_width=True)
-except:
-    st.info("Suche Tabelle...")
+except Exception as e:
+    st.info("Suche Verbindung zu Google...")
