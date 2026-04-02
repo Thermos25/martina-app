@@ -1,3 +1,4 @@
 streamlit
 Pillow
 pandas
+https://docs.google.com/spreadsheets/d/1peeRsiq-kDTT80zSpQJif1uapLYEaxwwGAgCHQXQ7z0/edit?usp=sharing
